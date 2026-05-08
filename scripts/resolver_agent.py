@@ -116,8 +116,10 @@ def build_prompt(mode: str, title: str, body: str, diff: str, spec: str, code: s
             f"Modify {impl_file} to fix the bug."
         )
     instruction = (
-        "Return a JSON object with keys 'spec' and 'code' containing the FULL new "
-        "file content (or null if no change needed). Do NOT include markdown fences."
+        "Return the result using ONLY these two XML tags (include full file content, or omit the tag entirely if no change is needed):\n"
+        f"<spec>...full new {spec_file} content...</spec>\n"
+        f"<code>...full new {impl_file} content...</code>\n"
+        "Do NOT wrap output in markdown fences or JSON."
     )
     untrusted_warning = (
         "=== UNTRUSTED USER INPUT BELOW ===\n"
@@ -150,21 +152,13 @@ def call_resolver(prompt: str, model: str) -> str:
     return response.content[0].text
 
 
-def parse_json_response(raw: str) -> dict:
-    """先試 json.loads，失敗就用 regex 撈第一個 {...} 區塊（防模型多吐 markdown）。"""
-    raw = raw.strip()
-    # 防禦：模型可能無視指示包 ``` 圍欄
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        # 找第一個 { 到最後一個 } 的區段
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not match:
-            raise ValueError(f"Cannot extract JSON from model response:\n{raw[:500]}")
-        return json.loads(match.group(0))
+def parse_response(raw: str) -> dict:
+    """從 XML 標籤提取 spec 和 code（比 JSON 更可靠，不需 escape HTML 特殊字元）。"""
+    def extract(tag: str) -> str | None:
+        m = re.search(rf"<{tag}>(.*?)</{tag}>", raw, re.DOTALL)
+        return m.group(1).strip() if m else None
+
+    return {"spec": extract("spec"), "code": extract("code")}
 
 
 def write_with_trailing_newline(path: Path, content: str) -> None:
@@ -218,7 +212,7 @@ def main() -> None:
     raw_response = call_resolver(prompt, model)
     print(f"Model response length: {len(raw_response)} chars")
 
-    payload = parse_json_response(raw_response)
+    payload = parse_response(raw_response)
     changed_files: list[str] = []
 
     # 通用 key 名稱：'spec' 對應 spec_file、'code' 對應 implementation_target，
