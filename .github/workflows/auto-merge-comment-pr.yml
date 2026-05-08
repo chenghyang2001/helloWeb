@@ -1,10 +1,8 @@
 name: 留言 PR 自動合併
 
 on:
-  pull_request:
-    types: [opened]
-    paths:
-      - 'comments/**'
+  workflow_dispatch:
+    # 已停用自動觸發 — merge 現在由 pr-agent-pipeline 的 merge job 負責
 
 permissions:
   contents: write

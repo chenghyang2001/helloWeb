@@ -142,3 +142,18 @@ jobs:
           QA_MODEL: ${{ env.QA_MODEL }}
         # || true 確保紅燈測試不會讓 workflow 失敗（設計上只發 PR 留言不擋 merge）
         run: python scripts/qa_agent.py || true
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: [classify, qa]
+    # 只對 comment-* branch 自動合併；resolver 完成後才執行，解決 race condition
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.classify.outputs.skip != 'true' &&
+      startsWith(github.event.pull_request.head.ref, 'comment-')
+    steps:
+      - uses: actions/checkout@v4
+      - name: 自動合併留言 PR（resolver 完成後）
+        run: gh pr merge "${{ github.event.pull_request.number }}" --merge --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
