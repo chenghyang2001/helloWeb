@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hello 楊政憲</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 40px 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      padding: 40px 36px;
+      max-width: 480px;
+      width: 100%;
+    }
+
+    h1 {
+      font-size: 2rem;
+      color: #2d3748;
+      margin-bottom: 24px;
+    }
+
+    .clock {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #4a5568;
+      background: #edf2f7;
+      border-radius: 8px;
+      padding: 12px 20px;
+      text-align: center;
+      letter-spacing: 0.05em;
+      margin-bottom: 32px;
+    }
+
+    .comment-section label {
+      display: block;
+      font-size: 0.9rem;
+      color: #718096;
+      margin-bottom: 8px;
+    }
+
+    .comment-section input[type="text"] {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #cbd5e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .comment-section input[type="text"]:focus {
+      border-color: #667eea;
+    }
+
+    .comment-section button {
+      margin-top: 12px;
+      width: 100%;
+      padding: 11px;
+      background: #667eea;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .comment-section button:hover {
+      background: #5a67d8;
+    }
+
+    .comment-list {
+      margin-top: 24px;
+    }
+
+    .comment-list h2 {
+      font-size: 0.95rem;
+      color: #a0aec0;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .comment-list ul {
+      list-style: none;
+    }
+
+    .comment-list li {
+      padding: 10px 14px;
+      background: #f7fafc;
+      border-left: 3px solid #667eea;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+      color: #2d3748;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>hello 楊政憲</h1>
+
+    <div class="clock" id="clock">--:--:--</div>
+
+    <div class="comment-section">
+      <label for="comment-input">留言</label>
+      <input type="text" id="comment-input" placeholder="在此輸入留言..." maxlength="200">
+      <button id="submit-btn">送出</button>
+    </div>
+
+    <div class="comment-list">
+      <h2>留言紀錄</h2>
+      <ul id="comments"></ul>
+    </div>
+  </div>
+
+  <script>
+    // 每秒更新時鐘
+    function updateClock() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('clock').textContent = `${hh}:${mm}:${ss}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // 送出留言
+    document.getElementById('submit-btn').addEventListener('click', function () {
+      const input = document.getElementById('comment-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const li = document.createElement('li');
+      li.textContent = text;   // textContent 防 XSS
+      document.getElementById('comments').prepend(li);
+
+      input.value = '';
+      input.focus();
+    });
+
+    // Enter 鍵也可以送出
+    document.getElementById('comment-input').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        document.getElementById('submit-btn').click();
+      }
+    });
+  </script>
+</body>
+</html>
