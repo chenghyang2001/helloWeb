@@ -1,0 +1,7 @@
+{
+  "spec_file": "spec.md",
+  "implementation_target": "index.html",
+  "test_target": "test_index.py",
+  "language": "html",
+  "run_command": ["python", "-c", "import pathlib; html=pathlib.Path('index.html').read_text(encoding='utf-8'); print(html[:80]); print('OK')"]
+}
