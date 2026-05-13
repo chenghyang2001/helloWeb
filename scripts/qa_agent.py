@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_pipeline_config() -> dict:
-    """從 repo root 讀 pipeline.config.json，缺檔時回退到 webHello 預設值。
+    """從 repo root 讀 pipeline.config.json，缺檔時回退到 helloWeb 預設值。
 
     回傳字典含五個 key：spec_file / implementation_target / test_target /
     language / run_command。設計目的是讓本流程能跨 repo 重用，而不必綁死

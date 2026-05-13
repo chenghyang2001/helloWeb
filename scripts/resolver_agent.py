@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_pipeline_config() -> dict:
-    """從 repo root 讀 pipeline.config.json，缺檔時回退到 webHello 預設值。
+    """從 repo root 讀 pipeline.config.json，缺檔時回退到 helloWeb 預設值。
 
     回傳字典含五個 key：spec_file / implementation_target / test_target /
     language / run_command。設計目的是讓本流程能跨 repo 重用，而不必綁死
@@ -46,7 +46,7 @@ def scan_for_dangerous_code(source: str, filename: str) -> list[str]:
     """掃描 AI 寫出來的 HTML/JS 是否含危險呼叫，回傳 findings 清單（空表示安全）。
 
     改用 regex 掃 HTML/JS 危險模式，取代 Python AST 分析——
-    因為 webHello 的實作檔是 HTML（index.html），不是可用 ast.parse 解析的 Python。
+    因為 helloWeb 的實作檔是 HTML（index.html），不是可用 ast.parse 解析的 Python。
     注意：regex 掃描可被混淆技術規避（如字串分割、Unicode 轉義），
     提供「善意防禦」而非「絕對封鎖」，適合阻止無惡意的 LLM 誤用。
     """
