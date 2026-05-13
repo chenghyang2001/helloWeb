@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kindle 17 — Mastering Claude Code &amp; GitHub</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --accent: #38bdf8;
+    --accent-dim: rgba(56,189,248,0.15);
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #273449;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --sidebar-w: 230px;
+    --thumb-h: 110px;
+    --header-h: 46px;
+  }
+  body { display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+         background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+  #header {
+    height: var(--header-h); flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    background: var(--surface); border-bottom: 1px solid rgba(56,189,248,0.2);
+    font-size: 13px;
+  }
+  #header-title { font-weight: 600; color: var(--accent); white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  #header-pos { color: var(--text-dim); white-space: nowrap; font-size: 12px; }
+  #badge { background: var(--accent-dim); color: var(--accent); border-radius: 4px;
+           padding: 1px 7px; font-size: 11px; font-weight: 700; }
+  #hint { color: var(--text-dim); font-size: 11px; display: flex; gap: 10px; }
+  #hint span { white-space: nowrap; }
+  #autoplay-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  #autoplay-btn {
+    background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 4px; padding: 2px 10px; font-size: 12px; cursor: pointer;
+    white-space: nowrap; transition: background .15s;
+  }
+  #autoplay-btn:hover { background: rgba(56,189,248,0.3); }
+  #autoplay-btn.playing { background: rgba(56,189,248,0.25); }
+  #interval-select {
+    background: var(--surface2); border: 1px solid rgba(56,189,248,0.3); color: var(--text);
+    border-radius: 4px; padding: 2px 6px; font-size: 12px; cursor: pointer;
+  }
+  #body { display: flex; flex: 1; overflow: hidden; }
+  #sidebar {
+    width: var(--sidebar-w); flex-shrink: 0;
+    background: var(--surface); border-right: 1px solid rgba(56,189,248,0.15);
+    overflow-y: auto; padding: 8px 6px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .ch-btn {
+    width: 100%; text-align: left; padding: 8px 10px;
+    background: var(--surface2); border: 1px solid transparent;
+    border-radius: 6px; cursor: pointer; color: var(--text-dim);
+    font-size: 11.5px; line-height: 1.5; transition: all .15s;
+  }
+  .ch-btn:hover { border-color: var(--accent); color: var(--text); }
+  .ch-btn.active { background: var(--accent-dim); border-color: var(--accent);
+                   color: var(--accent); font-weight: 600; }
+  .ch-btn .badge { float: right; background: rgba(56,189,248,0.18); color: var(--accent);
+                   border-radius: 10px; padding: 0 6px; font-size: 10px; font-weight: 700; }
+  #right-panel { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+  #viewer { flex: 1; position: relative; overflow: hidden; cursor: grab; background: #0a1120; }
+  #viewer.dragging { cursor: grabbing; }
+  #viewer img { position: absolute; top: 0; left: 0; transform-origin: 0 0;
+                pointer-events: none; max-width: none; user-select: none; -webkit-user-drag: none; }
+  #zoom-badge { position: absolute; bottom: 8px; right: 10px;
+    background: rgba(0,0,0,0.55); color: var(--accent); font-size: 11px;
+    border-radius: 4px; padding: 2px 8px; pointer-events: none; }
+  #nav-left, #nav-right {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(30,41,59,0.8); border: 1px solid rgba(56,189,248,0.3);
+    color: var(--accent); font-size: 20px; width: 36px; height: 54px;
+    cursor: pointer; border-radius: 4px; display: flex; align-items: center;
+    justify-content: center; z-index: 10; transition: background .15s;
+  }
+  #nav-left:hover, #nav-right:hover { background: rgba(56,189,248,0.2); }
+  #nav-left { left: 8px; }
+  #nav-right { right: 8px; }
+  #thumbs {
+    height: var(--thumb-h); flex-shrink: 0;
+    background: var(--surface); border-top: 1px solid rgba(56,189,248,0.15);
+    display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto; align-items: center;
+  }
+  #thumbs::-webkit-scrollbar { height: 4px; }
+  #thumbs::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 2px; }
+  .thumb { flex-shrink: 0; height: 88px; cursor: pointer;
+           border: 2px solid transparent; border-radius: 4px; overflow: hidden;
+           transition: border-color .15s; }
+  .thumb img { height: 100%; width: auto; display: block; }
+  .thumb.active { border-color: var(--accent); }
+  .thumb:hover { border-color: rgba(56,189,248,0.5); }
+</style>
+</head>
+<body>
+<div id="header">
+  <div id="header-title">Kindle 17 — Mastering Claude Code &amp; GitHub</div>
+  <div id="header-pos"></div>
+  <div id="badge"></div>
+  <div id="hint">
+    <span>&#8592; &#8594; 換頁</span>
+    <span>滾輪 縮放</span>
+    <span>拖曳 平移</span>
+    <span>雙擊 還原</span>
+  </div>
+  <div id="autoplay-controls">
+    <select id="interval-select">
+      <option value="5000">5 秒</option>
+      <option value="10000" selected>10 秒</option>
+      <option value="15000">15 秒</option>
+      <option value="20000">20 秒</option>
+      <option value="30000">30 秒</option>
+    </select>
+    <button id="autoplay-btn">&#9654; 自動播放</button>
+  </div>
+</div>
+<div id="body">
+  <div id="sidebar"></div>
+  <div id="right-panel">
+    <div id="viewer">
+      <img id="main-img" src="" alt="">
+      <div id="zoom-badge">100%</div>
+      <button id="nav-left">&#8592;</button>
+      <button id="nav-right">&#8594;</button>
+    </div>
+    <div id="thumbs"></div>
+  </div>
+</div>
+<script>
+const GROUPS = [
+  {
+    label: '第1章｜版本控制與 AI 的威力',
+    images: [
+      { file: 'ch01/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch01/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch01/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch01/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch01/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch01/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch01/png/slide-007.png', label: 'Slide 07' },
+      { file: 'ch01/png/slide-008.png', label: 'Slide 08' }
+    ]
+  },
+  {
+    label: '第2章｜設置 GitHub 與 Claude Code 環境',
+    images: [
+      { file: 'ch02/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch02/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch02/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch02/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch02/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch02/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch02/png/slide-007.png', label: 'Slide 07' },
+      { file: 'ch02/png/slide-008.png', label: 'Slide 08' },
+      { file: 'ch02/png/slide-009.png', label: 'Slide 09' },
+      { file: 'ch02/png/slide-010.png', label: 'Slide 10' },
+      { file: 'ch02/png/slide-011.png', label: 'Slide 11' },
+      { file: 'ch02/png/slide-012.png', label: 'Slide 12' },
+      { file: 'ch02/png/slide-013.png', label: 'Slide 13' }
+    ]
+  },
+  {
+    label: '第3章｜自動化 Commits',
+    images: [
+      { file: 'ch03/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch03/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch03/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch03/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch03/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch03/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch03/png/slide-007.png', label: 'Slide 07' },
+      { file: 'ch03/png/slide-008.png', label: 'Slide 08' },
+      { file: 'ch03/png/slide-009.png', label: 'Slide 09' },
+      { file: 'ch03/png/slide-010.png', label: 'Slide 10' },
+      { file: 'ch03/png/slide-011.png', label: 'Slide 11' },
+      { file: 'ch03/png/slide-012.png', label: 'Slide 12' }
+    ]
+  },
+  {
+    label: '第4章｜CI/CD 基礎入門',
+    images: [
+      { file: 'ch04/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch04/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch04/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch04/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch04/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch04/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch04/png/slide-007.png', label: 'Slide 07' },
+      { file: 'ch04/png/slide-008.png', label: 'Slide 08' },
+      { file: 'ch04/png/slide-009.png', label: 'Slide 09' },
+      { file: 'ch04/png/slide-010.png', label: 'Slide 10' },
+      { file: 'ch04/png/slide-011.png', label: 'Slide 11' },
+      { file: 'ch04/png/slide-012.png', label: 'Slide 12' },
+      { file: 'ch04/png/slide-013.png', label: 'Slide 13' },
+      { file: 'ch04/png/slide-014.png', label: 'Slide 14' },
+      { file: 'ch04/png/slide-015.png', label: 'Slide 15' },
+      { file: 'ch04/png/slide-016.png', label: 'Slide 16' },
+      { file: 'ch04/png/slide-017.png', label: 'Slide 17' }
+    ]
+  },
+  {
+    label: '第5章｜將程式碼轉為數位資產',
+    images: [
+      { file: 'ch05/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch05/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch05/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch05/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch05/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch05/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch05/png/slide-007.png', label: 'Slide 07' },
+      { file: 'ch05/png/slide-008.png', label: 'Slide 08' },
+      { file: 'ch05/png/slide-009.png', label: 'Slide 09' },
+      { file: 'ch05/png/slide-010.png', label: 'Slide 10' },
+      { file: 'ch05/png/slide-011.png', label: 'Slide 11' },
+      { file: 'ch05/png/slide-012.png', label: 'Slide 12' },
+      { file: 'ch05/png/slide-013.png', label: 'Slide 13' },
+      { file: 'ch05/png/slide-014.png', label: 'Slide 14' },
+      { file: 'ch05/png/slide-015.png', label: 'Slide 15' },
+      { file: 'ch05/png/slide-016.png', label: 'Slide 16' },
+      { file: 'ch05/png/slide-017.png', label: 'Slide 17' },
+      { file: 'ch05/png/slide-018.png', label: 'Slide 18' },
+      { file: 'ch05/png/slide-019.png', label: 'Slide 19' }
+    ]
+  },
+  {
+    label: '第6章｜進階 GitHub 工作流程與 Claude',
+    images: [
+      { file: 'ch06/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch06/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch06/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch06/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch06/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch06/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch06/png/slide-007.png', label: 'Slide 07' },
+      { file: 'ch06/png/slide-008.png', label: 'Slide 08' },
+      { file: 'ch06/png/slide-009.png', label: 'Slide 09' },
+      { file: 'ch06/png/slide-010.png', label: 'Slide 10' },
+      { file: 'ch06/png/slide-011.png', label: 'Slide 11' },
+      { file: 'ch06/png/slide-012.png', label: 'Slide 12' },
+      { file: 'ch06/png/slide-013.png', label: 'Slide 13' },
+      { file: 'ch06/png/slide-014.png', label: 'Slide 14' },
+      { file: 'ch06/png/slide-015.png', label: 'Slide 15' },
+      { file: 'ch06/png/slide-016.png', label: 'Slide 16' },
+      { file: 'ch06/png/slide-017.png', label: 'Slide 17' }
+    ]
+  },
+  {
+    label: '第7章｜結論：完全自動化的工作流程',
+    images: [
+      { file: 'ch07/png/slide-001.png', label: 'Slide 01' },
+      { file: 'ch07/png/slide-002.png', label: 'Slide 02' },
+      { file: 'ch07/png/slide-003.png', label: 'Slide 03' },
+      { file: 'ch07/png/slide-004.png', label: 'Slide 04' },
+      { file: 'ch07/png/slide-005.png', label: 'Slide 05' },
+      { file: 'ch07/png/slide-006.png', label: 'Slide 06' },
+      { file: 'ch07/png/slide-007.png', label: 'Slide 07' }
+    ]
+  }
+];
+
+let curGroup = 0, curIdx = 0;
+let scale = 1, tx = 0, ty = 0;
+let dragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+
+const sidebar    = document.getElementById('sidebar');
+const viewer     = document.getElementById('viewer');
+const mainImg    = document.getElementById('main-img');
+const badge      = document.getElementById('zoom-badge');
+const thumbsEl   = document.getElementById('thumbs');
+const headerPos  = document.getElementById('header-pos');
+const headerBadge = document.getElementById('badge');
+const navL = document.getElementById('nav-left');
+const navR = document.getElementById('nav-right');
+
+GROUPS.forEach((g, gi) => {
+  const btn = document.createElement('button');
+  btn.className = 'ch-btn' + (gi === 0 ? ' active' : '');
+  btn.innerHTML = g.label + ' <span class="badge">' + g.images.length + '</span>';
+  btn.onclick = () => switchGroup(gi);
+  sidebar.appendChild(btn);
+});
+
+function switchGroup(gi) {
+  curGroup = gi; curIdx = 0;
+  document.querySelectorAll('.ch-btn').forEach((b, i) => b.classList.toggle('active', i === gi));
+  buildThumbs();
+  loadSlide(0);
+}
+
+function buildThumbs() {
+  thumbsEl.innerHTML = '';
+  GROUPS[curGroup].images.forEach((img, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb' + (i === 0 ? ' active' : '');
+    const im = document.createElement('img');
+    im.src = img.file; im.loading = 'lazy';
+    d.appendChild(im);
+    d.onclick = () => loadSlide(i);
+    thumbsEl.appendChild(d);
+  });
+}
+
+function loadSlide(i) {
+  const grp = GROUPS[curGroup];
+  if (i < 0 || i >= grp.images.length) return;
+  curIdx = i;
+  mainImg.onload = fitImage;
+  mainImg.src = grp.images[i].file;
+  document.querySelectorAll('.thumb').forEach((t, j) => t.classList.toggle('active', j === i));
+  const active = thumbsEl.querySelectorAll('.thumb')[i];
+  if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  headerPos.textContent = grp.label + '  ' + (i + 1) + ' / ' + grp.images.length;
+  headerBadge.textContent = (i + 1) + '/' + grp.images.length;
+}
+
+function fitImage() {
+  const PAD = 24;
+  scale = Math.min(
+    (viewer.clientWidth  - PAD * 2) / mainImg.naturalWidth,
+    (viewer.clientHeight - PAD * 2) / mainImg.naturalHeight
+  );
+  tx = (viewer.clientWidth  - mainImg.naturalWidth  * scale) / 2;
+  ty = (viewer.clientHeight - mainImg.naturalHeight * scale) / 2;
+  applyTransform();
+}
+
+function applyTransform() {
+  mainImg.style.transform = 'matrix(' + scale + ',0,0,' + scale + ',' + tx + ',' + ty + ')';
+  badge.textContent = Math.round(scale * 100) + '%';
+}
+
+viewer.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.13 : 1 / 1.13;
+  const newScale = Math.min(Math.max(scale * factor, 0.08), 30);
+  const vr = viewer.getBoundingClientRect();
+  const cx = e.clientX - vr.left, cy = e.clientY - vr.top;
+  tx = cx - (cx - tx) * (newScale / scale);
+  ty = cy - (cy - ty) * (newScale / scale);
+  scale = newScale;
+  applyTransform();
+}, { passive: false });
+
+viewer.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  dragging = true;
+  startX = e.clientX; startY = e.clientY;
+  startTx = tx; startTy = ty;
+  viewer.classList.add('dragging');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  tx = startTx + (e.clientX - startX);
+  ty = startTy + (e.clientY - startY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging = false; viewer.classList.remove('dragging'); });
+viewer.addEventListener('dblclick', fitImage);
+
+navL.onclick = () => loadSlide(curIdx - 1);
+navR.onclick = () => loadSlide(curIdx + 1);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') loadSlide(curIdx + 1);
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') loadSlide(curIdx - 1);
+  else if (e.key === 'Home') loadSlide(0);
+  else if (e.key === 'End') loadSlide(GROUPS[curGroup].images.length - 1);
+  else if (e.key === 'f' || e.key === 'F') fitImage();
+});
+
+buildThumbs();
+mainImg.onload = fitImage;
+mainImg.src = GROUPS[0].images[0].file;
+headerPos.textContent = GROUPS[0].label + '  1 / ' + GROUPS[0].images.length;
+headerBadge.textContent = '1/' + GROUPS[0].images.length;
+
+// ── 自動播放 ──
+let autoTimer = null;
+const autoBtn = document.getElementById('autoplay-btn');
+const intervalSel = document.getElementById('interval-select');
+
+function autoNext() {
+  const grp = GROUPS[curGroup];
+  if (curIdx + 1 < grp.images.length) {
+    loadSlide(curIdx + 1);
+  } else if (curGroup + 1 < GROUPS.length) {
+    switchGroup(curGroup + 1);
+  } else {
+    switchGroup(0);
+  }
+}
+
+function startAuto() {
+  const ms = parseInt(intervalSel.value, 10);
+  autoTimer = setInterval(autoNext, ms);
+  autoBtn.textContent = '⏸ 自動播放';
+  autoBtn.classList.add('playing');
+}
+
+function stopAuto() {
+  clearInterval(autoTimer);
+  autoTimer = null;
+  autoBtn.textContent = '▶ 自動播放';
+  autoBtn.classList.remove('playing');
+}
+
+autoBtn.onclick = () => { autoTimer ? stopAuto() : startAuto(); };
+
+intervalSel.onchange = () => {
+  if (autoTimer) { stopAuto(); startAuto(); }
+};
+</script>
+</body>
+</html>
