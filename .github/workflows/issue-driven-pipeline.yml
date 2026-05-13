@@ -25,12 +25,14 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          GH_USER=$(GH_TOKEN="${{ secrets.GH_PAT }}" gh api user --jq .login)
+          GH_EMAIL="${GH_USER}@users.noreply.github.com"
+          git config user.name "$GH_USER"
+          git config user.email "$GH_EMAIL"
 
       - name: Create branch and open PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body || '（無描述）' }}
