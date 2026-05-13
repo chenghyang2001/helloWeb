@@ -212,6 +212,75 @@ def post_pr_comment(pr_number: str, body: str) -> None:
         print(f"PR comment failed: {proc.stderr}", file=sys.stderr)
 
 
+def extract_commit_hash(title: str, body: str) -> str:
+    """從 PR 標題或內文提取要回退的 commit hash（7-40 個 hex 字元）。
+
+    支援兩種格式：
+    1. 標題格式：[ROLLBACK] 回退到 commit d1a2b4f
+    2. Issue template body 格式：### 目標 commit hash\\n\\nd1a2b4f
+    """
+    pattern_inline = r"\bcommit\s+([0-9a-f]{7,40})\b"
+    m = re.search(pattern_inline, title, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    m = re.search(pattern_inline, body, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Issue template 結構化欄位：### 目標 commit hash\n\n<hash>
+    pattern_template = r"###\s*目標\s*commit\s*hash\s*\n+([0-9a-f]{7,40})"
+    m = re.search(pattern_template, body, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    raise ValueError(
+        f"找不到 commit hash，請在標題或欄位填入 7-40 字元 hex。Title: {title!r}"
+    )
+
+
+def handle_rollback(pr_number: str, branch: str, title: str, body: str) -> None:
+    """ROLLBACK 模式：驗證 commit hash → git revert --no-edit → push。"""
+    commit_hash = extract_commit_hash(title, body)
+    print(f"ROLLBACK: reverting commit {commit_hash}")
+
+    # 先驗證 hash 真的存在且為 commit 物件，防止對不存在的 ref 操作
+    verify = subprocess.run(
+        ["git", "cat-file", "-t", commit_hash],
+        capture_output=True, text=True, encoding="utf-8"
+    )
+    if verify.returncode != 0 or verify.stdout.strip() != "commit":
+        msg = (
+            f"🛑 **ROLLBACK 失敗**：commit `{commit_hash}` 不存在於此 repo 的 git 歷史中。\n\n"
+            "請確認 hash 正確後重新建立 Issue。"
+        )
+        post_pr_comment(pr_number, msg)
+        sys.exit(1)
+
+    # 執行 revert，衝突時清理並留 PR comment
+    result = subprocess.run(
+        ["git", "revert", commit_hash, "--no-edit"],
+        capture_output=True, text=True, encoding="utf-8"
+    )
+    if result.returncode != 0:
+        subprocess.run(["git", "revert", "--abort"], capture_output=True)
+        msg = (
+            f"🛑 **ROLLBACK 失敗**：`git revert {commit_hash}` 發生 merge conflict。\n\n"
+            "後續 commit 與此次 revert 的內容有衝突，需要人工介入處理。\n\n"
+            f"```\n{result.stderr[:2000]}\n```"
+        )
+        post_pr_comment(pr_number, msg)
+        sys.exit(1)
+
+    run(["git", "push", "origin", f"HEAD:{branch}"])
+    print(f"Pushed revert commit to {branch}")
+
+    post_pr_comment(
+        pr_number,
+        f"**Resolver (ROLLBACK)**\n\n"
+        f"已執行 `git revert {commit_hash}` 並 push 到 `{branch}`。\n\n"
+        f"> ⚠️ 此為 revert commit，原有歷史記錄完整保留。\n\n"
+        f"QA 將驗證回退後的 HTML 結構。",
+    )
+
+
 def main() -> None:
     pr_number = os.environ["PR_NUMBER"]
     mode = os.environ["MODE"]
@@ -221,6 +290,12 @@ def main() -> None:
     print(f"Resolver running on PR #{pr_number} (mode={mode}, branch={branch}, model={model})")
 
     title, body = read_pr_metadata()
+
+    # ROLLBACK 不走 AI 生成流程，直接執行 git revert
+    if mode == "ROLLBACK":
+        handle_rollback(pr_number, branch, title, body)
+        return
+
     diff = fetch_pr_diff(pr_number)
     spec = read_file_safe(SPEC_PATH)
     code = read_file_safe(SCRIPT_PATH)

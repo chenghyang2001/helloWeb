@@ -213,6 +213,30 @@ def main() -> int:
     model = os.environ["QA_MODEL"]
     print(f"QA agent running on PR #{pr_number} (model={model})")
 
+    mode = os.environ.get("MODE", "")
+    if mode == "ROLLBACK":
+        print("ROLLBACK mode detected — skipping AI-generated tests, doing structural check")
+        # 確認 index.html 存在且包含基本 HTML 結構
+        if not SCRIPT_PATH.exists():
+            post_pr_comment(pr_number, "❌ **QA ROLLBACK 失敗**：index.html 不存在，回退可能有問題。")
+            return 1
+        html = SCRIPT_PATH.read_text(encoding="utf-8")
+        missing = [tag for tag in ("<html", "<body") if tag.lower() not in html.lower()]
+        if missing:
+            post_pr_comment(
+                pr_number,
+                f"❌ **QA ROLLBACK 失敗**：index.html 缺少必要標籤：{missing}",
+            )
+            return 1
+        post_pr_comment(
+            pr_number,
+            "**QA Agent Result (ROLLBACK)**\n\n"
+            "✅ 結構檢查通過：index.html 存在且包含必要 HTML 標籤。\n\n"
+            "> 此次 QA 為結構驗證（非 AI 生成測試），適用於 ROLLBACK 場景。",
+        )
+        print("ROLLBACK QA: structural check passed")
+        return 0
+
     code = read_target_script()
     print(f"Loaded {CONFIG['implementation_target']} ({len(code)} chars)")
 
