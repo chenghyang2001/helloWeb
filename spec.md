@@ -1,42 +1,133 @@
-# index.html — 規格文件
+# helloWeb — 規格文件（v.003，2026-05-08）
 
-## 目標
+## 專案概述
 
-建立一個簡單的單頁 Web 應用程式，提供問候、即時時鐘與留言功能。
+單頁 Web App，示範「前端留言 → 自動建立 GitHub PR → AI Agent Pipeline 處理 → 自動合併」的完整流程。
+技術棧：Vanilla HTML5 + JavaScript（無框架）+ GitHub Actions + Claude API。
 
-## 需求
+---
 
-### 功能 0：專案標題標籤
-- 卡片頂部顯示 `專案-helloWeb` 標籤
-- 套用紫藍漸層背景（`#667eea` → `#764ba2`）、白色文字、圓角膠囊樣式
-- 字體加粗（`font-weight: 700`），位於問候訊息 `<h1>` 上方
-- 標籤右側顯示版本號與發佈時間戳記，格式為 `v.001 | YYYY-MM-DD HH:MM:SS`（含時分秒）
-- 版本時間戳記以淡紫色背景膠囊樣式呈現，與專案標籤並排同行
+## 功能規格
+
+### 功能 0：專案標題列
+- 卡片頂部顯示 `專案-helloWeb` 標籤（紫藍漸層 `#667eea → #764ba2`，白字，圓角膠囊）
+- 標籤右側並排顯示版本號與發佈時間戳記，格式：`v.003 | YYYY-MM-DD HH:MM:SS`
 
 ### 功能 1：問候訊息
-- 頁面顯示文字：`hello 楊政憲 楊政憲`
-- 兩個「楊政憲」以不同顏色顯示：第一個為紫藍色（`#667eea`），第二個為橙紅色（`#e53e3e`）
-- 置於頁面頂部的 `<h1>` 標籤內
+- `<h1>` 顯示：`hello 楊政憲 楊政憲 楊政憲`
+- 三個「楊政憲」分別為粉紅色 `#ed64a6`、紫藍色 `#667eea`、深紫 `#764ba2`、紅色 `#e53e3e`
 
 ### 功能 2：即時時鐘
-- 顯示目前時間（HH:MM:SS 格式）
-- 每秒自動更新
-- 時鐘元素的 DOM id 為 `clock`
+- DOM id：`clock`，格式 `HH:MM:SS`，每秒更新
 
 ### 功能 3：頁面副標題
-- 在 `<h1>` 下方加入 `<p>` 標籤，顯示副標題文字：`我的個人頁面`
-- id 為 `subtitle`
+- `<p id="subtitle">` 顯示「我的個人頁面」
 
-### 功能 4：留言功能
-- 提供文字輸入欄（`<input type="text">`）
-- 「送出」按鈕（id 為 `submit-btn`）
-- 按下送出後，留言加入頁面清單（`<ul id="comments">`）
-- 支援鍵盤 Enter 鍵送出
-- 防 XSS：使用 `textContent` 而非 `innerHTML`
+### 功能 4：GitHub Token 管理
+- Token 以 `localStorage` key `gh_token` 儲存於瀏覽器本機
+- 頁面底部「設定 / 更換 GitHub Token」按鈕，點擊開啟 Modal
+- Modal 內含 password 輸入欄（`id="token-input"`）、取消 / 儲存按鈕
+- 需要 Token 才能送出留言，若尚未設定則自動彈出 Modal 要求輸入
+- 若 API 回傳 401 / Bad credentials，自動清除舊 Token 並提示重新設定
+
+### 功能 5：留言送出 → 自動建立 GitHub PR
+送出流程（全透過 GitHub REST API，使用者的 Token 授權）：
+
+1. 取得 `master` 最新 commit SHA（`GET /repos/{repo}/git/refs/heads/master`）
+2. 建立新 branch：`comment-{ISO8601時間戳}`
+3. 在新 branch 上建立檔案：`comments/{timestamp}.md`，內容含留言文字與提交時間
+4. 建立 PR：title 取留言前 72 字元，body 含完整留言與來源標注
+
+輸入規格：
+- `<input type="text" id="comment-input" maxlength="200">`
+- `<button id="submit-btn">` 送出
+- 支援 Enter 鍵送出
+- 防 XSS：一律用 `textContent` 不用 `innerHTML`
+- 送出期間 input + button 皆 disabled
+
+Base64 編碼：用 `btoa(unescape(encodeURIComponent(str)))` 支援中文
+
+### 功能 6：PR 狀態即時追蹤
+- PR 建立後立即在留言列表插入條目，含 PR 連結與 CI 狀態徽章
+- 狀態徽章（`class="pr-status"`）：⏳ 處理中（`pending`）/ ✅ 完成（`success`）/ ❌ 失敗（`failure`）/ ⏱️ 逾時
+- 輪詢機制：每 10 秒查詢 `GET /repos/{repo}/commits/{headSha}/check-runs`
+- 最多輪詢 36 次（6 分鐘），逾時顯示 `⏱️ 逾時`
+- 網路錯誤靜默重試（catch 後繼續 setTimeout）
+
+### 功能 7：留言紀錄列表
+- `<ul id="comments">` 顯示本 session 內送出的所有留言
+- 每筆含：留言文字、PR 連結（另開新分頁）、CI 狀態徽章
+- 新留言用 `prepend` 插入最前面
+
+---
+
+## GitHub Actions Pipeline（`pr-agent-pipeline.yml`）
+
+觸發條件：PR `opened` 或 `synchronize`（限同 repo，不處理 fork）
+
+### Bot-loop 防護
+最後一個 commit 若由 `github-actions[bot]` 提交 → 整條 pipeline 跳過，避免無限迴圈。
+
+### 同 PR 併發取消
+```yaml
+concurrency:
+  group: pr-agent-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+```
+
+### Job 流程
+
+| Job | 模型 | 腳本 | 說明 |
+|-----|------|------|------|
+| `classify` | Claude Haiku | `scripts/classify_pr.py` | 判斷 PR 意圖，輸出 `mode` |
+| `resolver` | Claude Sonnet | `scripts/resolver_agent.py` | 依 mode 處理 PR，可 push 新 commit 到 PR branch |
+| `qa` | Claude Sonnet | `scripts/qa_agent.py` | 跑測試驗證，失敗只發 PR 留言不擋 merge（`|| true`）|
+| `merge` | — | `gh pr merge` | 只對 `comment-*` branch 自動合併並刪除 branch |
+
+環境變數：
+- `ANTHROPIC_API_KEY`：GitHub Secret
+- `GH_TOKEN`：`secrets.GITHUB_TOKEN`（自動注入）
+- 模型 ID 定義在 workflow-level `env`，方便統一升級
+
+---
+
+## 部署方式
+
+- **GitHub Pages**：master branch 根目錄 `index.html` 直接掛載，push 即生效
+- **Repo**：`chenghyang2001/helloWeb`
+- **URL**：`https://chenghyang2001.github.io/helloWeb/`（或同 repo 的 Pages URL）
+
+---
 
 ## 技術規格
 
-- 語言：HTML5 + Vanilla JavaScript（無框架依賴）
-- 單一檔案：`index.html`
-- 支援繁體中文介面
-- 響應式設計（手機與桌面均可使用）
+| 項目 | 規格 |
+|------|------|
+| 前端語言 | HTML5 + Vanilla JS（無框架） |
+| 單一檔案 | `index.html` |
+| 中文支援 | `lang="zh-TW"`，Base64 編碼用 `unescape(encodeURIComponent)` |
+| 響應式 | `max-width: 480px` 卡片，手機與桌面均可使用 |
+| Token 儲存 | `localStorage`（瀏覽器本機，不送伺服器）|
+| API 目標 | `https://api.github.com` |
+| CI 模型 | classify: Haiku（省成本）/ resolver, qa: Sonnet |
+
+---
+
+## 檔案結構
+
+```
+helloWeb/
+├── index.html                          # 主頁面（單一檔案）
+├── spec.md                             # 本規格文件
+├── pipeline.config.json                # Pipeline 設定
+├── scripts/
+│   ├── classify_pr.py                  # Haiku 分類 PR
+│   ├── resolver_agent.py               # Sonnet 處理 PR
+│   └── qa_agent.py                     # Sonnet QA 驗證
+├── comments/                           # PR 自動合併後的留言檔案
+├── .github/workflows/
+│   ├── pr-agent-pipeline.yml           # 主 Pipeline（classify→resolver→qa→merge）
+│   └── auto-merge-comment-pr.yml       # 舊版（已停用，改由 pipeline merge job 負責）
+└── doc/
+    └── github-vibe-coding-books.md     # 書單參考
+```
