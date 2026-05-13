@@ -32,7 +32,7 @@ jobs:
       skip: ${{ steps.bot_guard.outputs.skip }}
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -80,7 +80,7 @@ jobs:
       qa_passed: ${{ steps.retry_loop.outputs.qa_passed }}
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -168,7 +168,7 @@ jobs:
       (startsWith(github.event.pull_request.head.ref, 'comment-') ||
        startsWith(github.event.pull_request.head.ref, 'feature/'))
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: 自動合併 PR（QA 通過後）
         run: gh pr merge "${{ github.event.pull_request.number }}" --merge --delete-branch
         env:
