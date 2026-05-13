@@ -1,0 +1,30 @@
+name: 緊急回退（Emergency Rollback）
+description: 觸發 AI 自動執行 git revert，在三分鐘內將系統恢復到指定的穩定版本
+title: "[ROLLBACK] 回退到 commit "
+labels: ["rollback"]
+body:
+  - type: input
+    id: commit_hash
+    attributes:
+      label: 目標 commit hash
+      description: 要回退到的穩定版本（7-40 字元 hex），可從 GitHub Commits 頁面複製
+      placeholder: "例：d1a2b4f"
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: 回退原因
+      description: 說明觸發回退的問題，方便日後追蹤
+      placeholder: "例：PR #18 的 resolver 修改破壞了 index.html 格式，需回退到 merge 前的狀態"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 操作確認
+      options:
+        - label: 我已確認目標 commit 是一個已知穩定的版本
+          required: true
+        - label: 我了解此操作會生成一個新的 revert commit，原有歷史記錄不會被刪除
+          required: true

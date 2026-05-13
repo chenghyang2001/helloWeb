@@ -79,6 +79,12 @@ def main() -> None:
     title, body = read_pr_metadata()
     print(f"PR title: {title}")
 
+    # ROLLBACK 快速路徑：標題以 [ROLLBACK] 開頭時不必呼叫 API
+    if title.upper().startswith("[ROLLBACK]"):
+        print("Title starts with [ROLLBACK] — fast-path classification, skipping API call")
+        write_output("ROLLBACK")
+        return
+
     diff = fetch_pr_diff(pr_number)
     print(f"PR diff length: {len(diff)} chars")
 
