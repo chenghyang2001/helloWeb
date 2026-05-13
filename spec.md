@@ -65,6 +65,8 @@ Base64 編碼：用 `btoa(unescape(encodeURIComponent(str)))` 支援中文
 
 觸發條件：PR `opened` 或 `synchronize`（限同 repo，不處理 fork）
 
+流程：`classify (Haiku)` → `resolver_qa retry loop (Sonnet x3)` → `merge`
+
 ### Bot-loop 防護
 最後一個 commit 若由 `github-actions[bot]` 提交 → 整條 pipeline 跳過，避免無限迴圈。
 
@@ -80,9 +82,8 @@ concurrency:
 | Job | 模型 | 腳本 | 說明 |
 |-----|------|------|------|
 | `classify` | Claude Haiku | `scripts/classify_pr.py` | 判斷 PR 意圖，輸出 `mode` |
-| `resolver` | Claude Sonnet | `scripts/resolver_agent.py` | 依 mode 處理 PR，可 push 新 commit 到 PR branch |
-| `qa` | Claude Sonnet | `scripts/qa_agent.py` | 跑測試驗證，失敗只發 PR 留言不擋 merge（`|| true`）|
-| `merge` | — | `gh pr merge` | 只對 `comment-*` branch 自動合併並刪除 branch |
+| `resolver_qa` | Claude Sonnet | `scripts/resolver_agent.py` + `scripts/qa_agent.py` | Resolver + QA retry loop（最多 3 次）；QA 失敗自動重試，三次全失敗則 PR 留言通知並讓 job 亮紅燈 |
+| `merge` | — | `gh pr merge` | 對 `comment-*` 及 `feature/*` branch 自動合併並刪除 branch（需 `resolver_qa` 成功） |
 
 環境變數：
 - `ANTHROPIC_API_KEY`：GitHub Secret

@@ -1,12 +1,12 @@
 name: PR Agent Pipeline
 
 # 觸發時機：PR 開啟或同步（push 新 commit 到 PR branch）
-# 流程：classify (Haiku) → resolver (Sonnet) → qa (Sonnet)
+# 流程：classify (Haiku) → resolver_qa retry loop (Sonnet x3) → merge
 on:
   pull_request:
     types: [opened, synchronize]
 
-# 權限：resolver 需要 push 到 PR branch（contents: write），三個 job 都要留 PR 留言（pull-requests: write）
+# 權限：resolver_qa 需要 push 到 PR branch（contents: write），所有 job 都要留 PR 留言（pull-requests: write）
 permissions:
   contents: write
   pull-requests: write
@@ -71,11 +71,13 @@ jobs:
           CLASSIFY_MODEL: ${{ env.CLASSIFY_MODEL }}
         run: python scripts/classify_pr.py
 
-  resolver:
+  resolver_qa:
     runs-on: ubuntu-latest
     needs: classify
     # 同 repo 守衛 + bot-loop guard 雙重檢查
     if: github.event.pull_request.head.repo.full_name == github.repository && needs.classify.outputs.skip != 'true'
+    outputs:
+      qa_passed: ${{ steps.retry_loop.outputs.qa_passed }}
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v4
@@ -83,7 +85,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
-          # 用 GITHUB_TOKEN 讓後續 git push 帶權限
+          # 用 GITHUB_TOKEN 讓後續 git push 帶權限（resolver_agent.py 會 push commit）
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
@@ -92,7 +94,8 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install 'anthropic==0.40.*'
+        # QA 需要 pytest 跑測試，resolver 需要 anthropic SDK
+        run: pip install 'anthropic==0.40.*' 'pytest==8.*'
 
       - name: Configure git for bot commits
         # github-actions[bot] 的標準 email 寫法（GitHub 官方推薦）
@@ -100,7 +103,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Run resolver agent
+      - name: Resolver + QA retry loop（最多 3 次）
+        id: retry_loop
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,52 +112,61 @@ jobs:
           MODE: ${{ needs.classify.outputs.mode }}
           GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           RESOLVER_MODEL: ${{ env.RESOLVER_MODEL }}
-        run: python scripts/resolver_agent.py
-
-  qa:
-    runs-on: ubuntu-latest
-    # qa 引用 needs.classify.outputs.skip，所以 needs 要含 classify 才合法
-    needs: [classify, resolver]
-    # 同 repo 守衛 + bot-loop guard 雙重檢查
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.classify.outputs.skip != 'true'
-    steps:
-      - name: Checkout PR head (post-resolver)
-        uses: actions/checkout@v4
-        with:
-          # resolver 已 push 新 commit，這裡重新拉最新 PR branch 才能跑到 resolver 改完的程式碼
-          ref: ${{ github.event.pull_request.head.ref }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        # QA 需要 pytest 跑測試，紅燈不阻擋 workflow（純留言提示）
-        run: pip install 'anthropic==0.40.*' 'pytest==8.*'
-
-      - name: Run QA agent
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           QA_MODEL: ${{ env.QA_MODEL }}
-        # || true 確保紅燈測試不會讓 workflow 失敗（設計上只發 PR 留言不擋 merge）
-        run: python scripts/qa_agent.py || true
+        run: |
+          MAX_ATTEMPTS=3
+          QA_PASSED=false
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            echo "=== Resolver+QA Attempt ${attempt}/${MAX_ATTEMPTS} ==="
+
+            # 拉最新（避免上一輪 resolver push 後本地與遠端不一致，--rebase 保持線性歷史）
+            git pull origin "$BRANCH" --rebase 2>&1 || { git rebase --abort 2>/dev/null || true; echo "⚠️ pre-resolver pull failed on attempt ${attempt}, skipping"; continue; }
+
+            # 執行 resolver（可能會 push 新 commit 到 PR branch）
+            python scripts/resolver_agent.py
+
+            # 拉 resolver push 的新 commit，確保 QA 檢查的是最新程式碼
+            git pull origin "$BRANCH" --rebase 2>&1 || { git rebase --abort 2>/dev/null || true; echo "⚠️ post-resolver pull failed on attempt ${attempt}, skipping"; continue; }
+
+            # 執行 QA（依據真實 exit code 判斷是否通過）
+            if python scripts/qa_agent.py; then
+              echo "✅ QA passed on attempt ${attempt}"
+              QA_PASSED=true
+              break
+            fi
+
+            echo "❌ QA failed on attempt ${attempt}"
+
+            # 三次全失敗時通知使用者，避免無聲死亡
+            if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+              NOTIFY_BODY=$'❌ **連續三次 QA 失敗，請人工介入處理。**\n\n已嘗試 '"${MAX_ATTEMPTS}"$' 次，QA 驗證均未通過。請檢查 Actions log 了解詳情。'
+              gh pr comment "$PR_NUMBER" --body "$NOTIFY_BODY"
+            fi
+          done
+
+          echo "qa_passed=${QA_PASSED}" >> "$GITHUB_OUTPUT"
+
+          # QA 最終失敗時讓 job 亮紅燈，阻擋 merge job 執行
+          if [ "$QA_PASSED" = "false" ]; then
+            exit 1
+          fi
 
   merge:
     runs-on: ubuntu-latest
-    needs: [classify, qa]
-    # 只對 comment-* branch 自動合併；resolver 完成後才執行，解決 race condition
+    needs: [classify, resolver_qa]
+    # 只對 comment-* 和 feature/* branch 自動合併；resolver_qa 通過後才執行
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
       needs.classify.outputs.skip != 'true' &&
-      startsWith(github.event.pull_request.head.ref, 'comment-')
+      needs.resolver_qa.result == 'success' &&
+      needs.resolver_qa.outputs.qa_passed == 'true' &&
+      (startsWith(github.event.pull_request.head.ref, 'comment-') ||
+       startsWith(github.event.pull_request.head.ref, 'feature/'))
     steps:
       - uses: actions/checkout@v4
-      - name: 自動合併留言 PR（resolver 完成後）
+      - name: 自動合併 PR（QA 通過後）
         run: gh pr merge "${{ github.event.pull_request.number }}" --merge --delete-branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

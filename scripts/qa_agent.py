@@ -3,7 +3,7 @@
 
 讀 resolver 改完的 index.html，請 Sonnet 寫出恰好 2 個 pytest 測試（happy + edge），
 跑 pytest 收集結果，把結果以摺疊區塊留言到 PR。
-紅燈不阻擋 workflow（透過 workflow 的 || true 達成）。
+pytest exit code 傳遞給呼叫者；上層 workflow 的 retry loop 依此判斷是否重試（最多 3 次）。
 """
 import json
 import os
@@ -208,7 +208,7 @@ def post_pr_comment(pr_number: str, body: str) -> None:
         Path(tmp_path).unlink(missing_ok=True)
 
 
-def main() -> None:
+def main() -> int:
     pr_number = os.environ["PR_NUMBER"]
     model = os.environ["QA_MODEL"]
     print(f"QA agent running on PR #{pr_number} (model={model})")
@@ -230,12 +230,12 @@ def main() -> None:
     comment = build_comment(passed, failed, output)
     post_pr_comment(pr_number, comment)
     print(f"Posted QA comment: {passed} passed, {failed} failed")
+    return exit_code
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except Exception as e:
         print(f"qa_agent.py failed: {e}", file=sys.stderr)
-        # 設計上 QA 永遠 exit 0，紅燈不擋 workflow（workflow 也有 || true 雙保險）
-        sys.exit(0)
+        sys.exit(1)
