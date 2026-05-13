@@ -149,15 +149,18 @@ helloWeb/
 ├── index.html                          # 主頁面（單一檔案）
 ├── spec.md                             # 本規格文件
 ├── pipeline.config.json                # Pipeline 設定
+├── requirements.txt                    # Python 依賴版本鎖定（供 Dependabot 掃描）
 ├── scripts/
 │   ├── classify_pr.py                  # Haiku 分類 PR
 │   ├── resolver_agent.py               # Sonnet 處理 PR
 │   └── qa_agent.py                     # Sonnet QA 驗證
 ├── comments/                           # PR 自動合併後的留言檔案
-├── .github/workflows/
-│   ├── pr-agent-pipeline.yml           # 主 Pipeline（classify→resolver→qa→merge）
-│   ├── issue-driven-pipeline.yml       # IDD Pipeline（Issue → branch + PR → pipeline 接手）
-│   └── auto-merge-comment-pr.yml       # 舊版（已停用，改由 pipeline merge job 負責）
+├── .github/
+│   ├── dependabot.yml                  # Dependabot 自動追蹤 pip / Actions 版本更新
+│   └── workflows/
+│       ├── pr-agent-pipeline.yml       # 主 Pipeline（classify→resolver→qa→merge）
+│       ├── issue-driven-pipeline.yml   # IDD Pipeline（Issue → branch + PR → pipeline 接手）
+│       └── auto-merge-comment-pr.yml   # 舊版（已停用，改由 pipeline merge job 負責）
 └── doc/
     └── github-vibe-coding-books.md     # 書單參考
 ```
