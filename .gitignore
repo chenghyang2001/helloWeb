@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Windows 系統垃圾
+*.stackdump
+Thumbs.db
+desktop.ini
+
+# 環境變數 / 機密
+.env
+.env.*
+credentials.json
+token.json
+*.pem
+
+# 大型本地資料（Kindle pipeline 產出物）
+kindle-17/screenshots/
+kindle-17/tmp_pages/
+kindle-17/*.pdf
+kindle-17/audio/
+kindle-17/PPTX/ch*/
+kindle-17/PPTX/*.pptx
+
+# Node（若未來加前端工具）
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
