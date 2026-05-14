@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -256,13 +257,14 @@
   </div>
 
   <script>
-    const REPO  = 'chenghyang2001/helloWeb';
-    const BASE  = 'https://api.github.com';
+    const REPO = 'chenghyang2001/helloWeb';
+    const BASE = 'https://api.github.com';
 
     /* ── 時鐘 ── */
     function updateClock() {
-      const now = new Date();
+      // 將數字補零至兩位數的通用工具
       const pad = n => String(n).padStart(2, '0');
+      const now = new Date();
       document.getElementById('clock').textContent =
         `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
     }
@@ -270,12 +272,12 @@
     setInterval(updateClock, 1000);
 
     /* ── Token 管理 ── */
-    function getToken() { return localStorage.getItem('gh_token') || ''; }
-    function saveToken(t) { localStorage.setItem('gh_token', t.trim()); }
-    function clearToken() { localStorage.removeItem('gh_token'); }
+    function getToken()    { return localStorage.getItem('gh_token') || ''; }
+    function saveToken(t)  { localStorage.setItem('gh_token', t.trim()); }
+    function clearToken()  { localStorage.removeItem('gh_token'); }
 
-    const modal       = document.getElementById('token-modal');
-    const tokenInput  = document.getElementById('token-input');
+    const modal      = document.getElementById('token-modal');
+    const tokenInput = document.getElementById('token-input');
 
     function openTokenModal(resolve) {
       tokenInput.value = getToken();
@@ -303,11 +305,10 @@
 
     /* ── GitHub API helpers ── */
     async function ghFetch(path, options = {}) {
-      const token = getToken();
       const res = await fetch(`${BASE}${path}`, {
         ...options,
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getToken()}`,
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json',
           ...(options.headers || {})
@@ -320,6 +321,10 @@
       return res.json();
     }
 
+    /* POST / PUT 請求的 JSON body 包裝，避免每次手動 JSON.stringify */
+    function ghPost(path, body)  { return ghFetch(path, { method: 'POST', body: JSON.stringify(body) }); }
+    function ghPut(path, body)   { return ghFetch(path, { method: 'PUT',  body: JSON.stringify(body) }); }
+
     /* Base64-encode UTF-8（瀏覽器安全版，支援中文） */
     function toBase64(str) {
       return btoa(unescape(encodeURIComponent(str)));
@@ -327,75 +332,72 @@
 
     /* ── 建立 PR 主流程 ── */
     async function createPR(comment) {
-      const ts         = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const branch     = `comment-${ts}`;
-      const filePath   = `comments/${ts}.md`;
+      const ts          = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const branch      = `comment-${ts}`;
+      const filePath    = `comments/${ts}.md`;
       const fileContent = `# 留言\n\n${comment}\n\n_提交時間：${new Date().toLocaleString('zh-TW')}_\n`;
 
       // 1. 取得 master 最新 commit SHA
-      const ref = await ghFetch(`/repos/${REPO}/git/refs/heads/master`);
+      const ref       = await ghFetch(`/repos/${REPO}/git/refs/heads/master`);
       const masterSha = ref.object.sha;
 
       // 2. 建立新 branch
-      await ghFetch(`/repos/${REPO}/git/refs`, {
-        method: 'POST',
-        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: masterSha })
+      await ghPost(`/repos/${REPO}/git/refs`, {
+        ref: `refs/heads/${branch}`,
+        sha: masterSha
       });
 
       // 3. 在新 branch 上建立檔案
-      await ghFetch(`/repos/${REPO}/contents/${filePath}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          message: `新增留言：${comment.slice(0, 50)}`,
-          content: toBase64(fileContent),
-          branch
-        })
+      await ghPut(`/repos/${REPO}/contents/${filePath}`, {
+        message: `新增留言：${comment.slice(0, 50)}`,
+        content: toBase64(fileContent),
+        branch
       });
 
-      // 4. 建立 PR
+      // 4. 建立 PR（標題超過 72 字元時截斷並加省略號）
       const title = comment.length > 72 ? comment.slice(0, 69) + '...' : comment;
-      const pr = await ghFetch(`/repos/${REPO}/pulls`, {
-        method: 'POST',
-        body: JSON.stringify({
-          title,
-          body: `## 用戶留言\n\n${comment}\n\n_透過 helloWeb 頁面自動提交_`,
-          head: branch,
-          base: 'master'
-        })
+      const pr    = await ghPost(`/repos/${REPO}/pulls`, {
+        title,
+        body: `## 用戶留言\n\n${comment}\n\n_透過 helloWeb 頁面自動提交_`,
+        head: branch,
+        base: 'master'
       });
 
       return { prUrl: pr.html_url, prNumber: pr.number, title, headSha: pr.head.sha };
     }
 
+    /* ── PR 狀態徽章更新 ── */
+    // 將重複出現的「設定徽章文字＋className」包成一個工具函數
+    function setBadge(badgeEl, text, state) {
+      badgeEl.textContent = text;
+      badgeEl.className   = `pr-status ${state}`;
+    }
+
     /* ── PR 狀態輪詢 ── */
     async function pollPRStatus(headSha, badgeEl) {
-      const MAX = 36; // 最多 6 分鐘（36 × 10s）
+      const MAX    = 36; // 最多 6 分鐘（36 × 10s）
       let attempts = 0;
 
       async function tick() {
         if (attempts++ >= MAX) {
-          badgeEl.textContent = '⏱️ 逾時';
-          badgeEl.className = 'pr-status failure';
+          setBadge(badgeEl, '⏱️ 逾時', 'failure');
           return;
         }
         try {
-          const data = await ghFetch(`/repos/${REPO}/commits/${headSha}/check-runs`);
-          const runs = data.check_runs || [];
+          const data  = await ghFetch(`/repos/${REPO}/commits/${headSha}/check-runs`);
+          const runs  = data.check_runs || [];
           if (runs.length === 0) { setTimeout(tick, 10000); return; }
 
-          const allDone = runs.every(r => r.status === 'completed');
+          const allDone   = runs.every(r => r.status === 'completed');
           const anyFailed = runs.some(r => r.conclusion === 'failure');
 
           if (!allDone) {
-            badgeEl.textContent = '⏳ 處理中';
-            badgeEl.className = 'pr-status pending';
+            setBadge(badgeEl, '⏳ 處理中', 'pending');
             setTimeout(tick, 10000);
           } else if (anyFailed) {
-            badgeEl.textContent = '❌ 失敗';
-            badgeEl.className = 'pr-status failure';
+            setBadge(badgeEl, '❌ 失敗', 'failure');
           } else {
-            badgeEl.textContent = '✅ 完成';
-            badgeEl.className = 'pr-status success';
+            setBadge(badgeEl, '✅ 完成', 'success');
           }
         } catch (_) {
           setTimeout(tick, 10000); // 網路錯誤靜默重試
@@ -404,16 +406,38 @@
       tick();
     }
 
+    /* ── 狀態列更新 ── */
+    const statusDiv = document.getElementById('status');
+    // 將重複出現的「設定 textContent＋className」包成一個工具函數
+    function setStatus(msg, type) {
+      statusDiv.textContent = msg;
+      statusDiv.className   = `status ${type}`;
+    }
+
+    /* ── 建立留言列表項目 DOM ── */
+    // 提取為獨立函數，避免在事件處理器內散落大量 DOM 操作
+    function createCommentListItem(text, prUrl, prNumber, badge) {
+      const li   = document.createElement('li');
+      const span = document.createElement('span');
+      span.textContent = text;
+
+      const link = document.createElement('a');
+      link.className = 'pr-link';
+      link.href      = prUrl;
+      link.target    = '_blank';
+      link.rel       = 'noopener noreferrer';
+      link.textContent = `→ PR #${prNumber} 已建立`;
+      link.appendChild(badge);
+
+      li.appendChild(span);
+      li.appendChild(link);
+      return li;
+    }
+
     /* ── 送出按鈕 ── */
     const submitBtn  = document.getElementById('submit-btn');
     const commentIn  = document.getElementById('comment-input');
-    const statusDiv  = document.getElementById('status');
     const commentList = document.getElementById('comments');
-
-    function setStatus(msg, type) {
-      statusDiv.textContent = msg;
-      statusDiv.className = `status ${type}`;
-    }
 
     submitBtn.addEventListener('click', async () => {
       const text = commentIn.value.trim();
@@ -422,30 +446,19 @@
       const token = await requireToken();
       if (!token) { setStatus('未提供 Token，已取消', 'error'); return; }
 
+      // 送出期間鎖定輸入區域
       submitBtn.disabled = true;
       commentIn.disabled = true;
       setStatus('建立分支與 PR 中…', 'loading');
 
       try {
-        const { prUrl, prNumber, title, headSha } = await createPR(text);
+        const { prUrl, prNumber, headSha } = await createPR(text);
 
-        // 新增到留言紀錄
-        const li = document.createElement('li');
-        const span = document.createElement('span');
-        span.textContent = text;
-        const link = document.createElement('a');
-        link.className = 'pr-link';
-        link.href = prUrl;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = `→ PR #${prNumber} 已建立`;
+        // 預先建立徽章元素，交給輪詢函數後續更新
         const badge = document.createElement('span');
-        badge.className = 'pr-status pending';
-        badge.textContent = '⏳ 處理中';
-        link.appendChild(badge);
-        li.appendChild(span);
-        li.appendChild(link);
-        commentList.prepend(li);
+        setBadge(badge, '⏳ 處理中', 'pending');
+
+        commentList.prepend(createCommentListItem(text, prUrl, prNumber, badge));
 
         commentIn.value = '';
         setStatus(`PR #${prNumber} 建立成功！`, 'success');
@@ -470,3 +483,4 @@
   </script>
 </body>
 </html>
+```
