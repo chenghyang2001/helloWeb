@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -321,10 +320,6 @@
       return res.json();
     }
 
-    /* POST / PUT 請求的 JSON body 包裝，避免每次手動 JSON.stringify */
-    function ghPost(path, body)  { return ghFetch(path, { method: 'POST', body: JSON.stringify(body) }); }
-    function ghPut(path, body)   { return ghFetch(path, { method: 'PUT',  body: JSON.stringify(body) }); }
-
     /* Base64-encode UTF-8（瀏覽器安全版，支援中文） */
     function toBase64(str) {
       return btoa(unescape(encodeURIComponent(str)));
@@ -338,36 +333,43 @@
       const fileContent = `# 留言\n\n${comment}\n\n_提交時間：${new Date().toLocaleString('zh-TW')}_\n`;
 
       // 1. 取得 master 最新 commit SHA
-      const ref       = await ghFetch(`/repos/${REPO}/git/refs/heads/master`);
+      const ref = await ghFetch(`/repos/${REPO}/git/refs/heads/master`);
       const masterSha = ref.object.sha;
 
       // 2. 建立新 branch
-      await ghPost(`/repos/${REPO}/git/refs`, {
-        ref: `refs/heads/${branch}`,
-        sha: masterSha
+      await ghFetch(`/repos/${REPO}/git/refs`, {
+        method: 'POST',
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: masterSha })
       });
 
       // 3. 在新 branch 上建立檔案
-      await ghPut(`/repos/${REPO}/contents/${filePath}`, {
-        message: `新增留言：${comment.slice(0, 50)}`,
-        content: toBase64(fileContent),
-        branch
+      await ghFetch(`/repos/${REPO}/contents/${filePath}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          message: `新增留言：${comment.slice(0, 50)}`,
+          content: toBase64(fileContent),
+          branch
+        })
       });
 
-      // 4. 建立 PR（標題超過 72 字元時截斷並加省略號）
+      // 4. 建立 PR（標題超過 72 字元時截斷並加上省略號）
       const title = comment.length > 72 ? comment.slice(0, 69) + '...' : comment;
-      const pr    = await ghPost(`/repos/${REPO}/pulls`, {
-        title,
-        body: `## 用戶留言\n\n${comment}\n\n_透過 helloWeb 頁面自動提交_`,
-        head: branch,
-        base: 'master'
+      const pr = await ghFetch(`/repos/${REPO}/pulls`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          body: `## 用戶留言\n\n${comment}\n\n_透過 helloWeb 頁面自動提交_`,
+          head: branch,
+          base: 'master'
+        })
       });
 
       return { prUrl: pr.html_url, prNumber: pr.number, title, headSha: pr.head.sha };
     }
 
-    /* ── PR 狀態徽章更新 ── */
-    // 將重複出現的「設定徽章文字＋className」包成一個工具函數
+    /* ── PR 狀態徽章更新 ──
+       將重複出現的「設定徽章文字 + className」動作封裝為一個工具函數，
+       避免在 pollPRStatus 各分支中散落相同的兩行指派。 */
     function setBadge(badgeEl, text, state) {
       badgeEl.textContent = text;
       badgeEl.className   = `pr-status ${state}`;
@@ -375,7 +377,7 @@
 
     /* ── PR 狀態輪詢 ── */
     async function pollPRStatus(headSha, badgeEl) {
-      const MAX    = 36; // 最多 6 分鐘（36 × 10s）
+      const MAX = 36; // 最多 6 分鐘（36 × 10s）
       let attempts = 0;
 
       async function tick() {
@@ -384,8 +386,8 @@
           return;
         }
         try {
-          const data  = await ghFetch(`/repos/${REPO}/commits/${headSha}/check-runs`);
-          const runs  = data.check_runs || [];
+          const data = await ghFetch(`/repos/${REPO}/commits/${headSha}/check-runs`);
+          const runs = data.check_runs || [];
           if (runs.length === 0) { setTimeout(tick, 10000); return; }
 
           const allDone   = runs.every(r => r.status === 'completed');
@@ -406,38 +408,52 @@
       tick();
     }
 
-    /* ── 狀態列更新 ── */
-    const statusDiv = document.getElementById('status');
-    // 將重複出現的「設定 textContent＋className」包成一個工具函數
-    function setStatus(msg, type) {
-      statusDiv.textContent = msg;
-      statusDiv.className   = `status ${type}`;
-    }
+    /* ── 留言列表項目建立 ──
+       將「組裝 <li> 節點」的 DOM 操作從事件處理器中抽離，
+       讓 click handler 只需專注在業務邏輯（API 呼叫、狀態切換）。
+       回傳 badge 元素供後續輪詢使用。 */
+    function createCommentItem(text, prUrl, prNumber) {
+      const li    = document.createElement('li');
+      const span  = document.createElement('span');
+      const link  = document.createElement('a');
+      const badge = document.createElement('span');
 
-    /* ── 建立留言列表項目 DOM ── */
-    // 提取為獨立函數，避免在事件處理器內散落大量 DOM 操作
-    function createCommentListItem(text, prUrl, prNumber, badge) {
-      const li   = document.createElement('li');
-      const span = document.createElement('span');
       span.textContent = text;
 
-      const link = document.createElement('a');
       link.className = 'pr-link';
       link.href      = prUrl;
       link.target    = '_blank';
       link.rel       = 'noopener noreferrer';
       link.textContent = `→ PR #${prNumber} 已建立`;
-      link.appendChild(badge);
 
+      // 徽章初始狀態為「處理中」，由 pollPRStatus 持續更新
+      badge.className  = 'pr-status pending';
+      badge.textContent = '⏳ 處理中';
+
+      link.appendChild(badge);
       li.appendChild(span);
       li.appendChild(link);
-      return li;
+
+      return { li, badge };
     }
 
     /* ── 送出按鈕 ── */
     const submitBtn  = document.getElementById('submit-btn');
     const commentIn  = document.getElementById('comment-input');
+    const statusDiv  = document.getElementById('status');
     const commentList = document.getElementById('comments');
+
+    /* 統一的狀態訊息更新工具，集中管理 textContent 與 className 指派 */
+    function setStatus(msg, type) {
+      statusDiv.textContent = msg;
+      statusDiv.className   = `status ${type}`;
+    }
+
+    /* 統一切換輸入區的啟用 / 停用狀態，避免在 try/finally 中重複指派兩個元素 */
+    function setFormDisabled(disabled) {
+      submitBtn.disabled = disabled;
+      commentIn.disabled = disabled;
+    }
 
     submitBtn.addEventListener('click', async () => {
       const text = commentIn.value.trim();
@@ -446,19 +462,15 @@
       const token = await requireToken();
       if (!token) { setStatus('未提供 Token，已取消', 'error'); return; }
 
-      // 送出期間鎖定輸入區域
-      submitBtn.disabled = true;
-      commentIn.disabled = true;
+      setFormDisabled(true);
       setStatus('建立分支與 PR 中…', 'loading');
 
       try {
         const { prUrl, prNumber, headSha } = await createPR(text);
 
-        // 預先建立徽章元素，交給輪詢函數後續更新
-        const badge = document.createElement('span');
-        setBadge(badge, '⏳ 處理中', 'pending');
-
-        commentList.prepend(createCommentListItem(text, prUrl, prNumber, badge));
+        // 組裝並插入留言列表項目，取回 badge 供狀態輪詢更新
+        const { li, badge } = createCommentItem(text, prUrl, prNumber);
+        commentList.prepend(li);
 
         commentIn.value = '';
         setStatus(`PR #${prNumber} 建立成功！`, 'success');
@@ -471,8 +483,7 @@
           setStatus(`錯誤：${err.message}`, 'error');
         }
       } finally {
-        submitBtn.disabled = false;
-        commentIn.disabled = false;
+        setFormDisabled(false);
         commentIn.focus();
       }
     });
@@ -483,4 +494,3 @@
   </script>
 </body>
 </html>
-```
